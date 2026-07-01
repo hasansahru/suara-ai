@@ -793,17 +793,39 @@ def render_ringkasan(result: dict):
         st.markdown("### 📊 Ringkasan Analisis")
         if isinstance(ringkasan, dict):
             for k, v in ringkasan.items():
-                if isinstance(v, str):
-                    st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+                title = k.replace('_', ' ').title()
+                
+                if isinstance(v, list):
+                    st.markdown(f"📌 **{title}:**")
+                    for item in v:
+                        st.markdown(f"- {item}")
+                elif isinstance(v, str):
+                    # Highlight waktu format (00:00 atau 00:00:00 atau rentang 00:00-00:00) agar menonjol
+                    v_highlighted = re.sub(r'(\d{1,2}:\d{2}(?::\d{2})?(?:\s*-\s*\d{1,2}:\d{2}(?::\d{2})?)?)', r'**`\1`**', v)
+                    
+                    if "Hook" in title or "Opening" in title:
+                        st.success(f"🪝 **{title}:**\n\n{v_highlighted}")
+                    elif "Durasi" in title or "Struktur" in title or "Waktu" in title:
+                        st.info(f"⏱️ **{title}:**\n\n{v_highlighted}")
+                    else:
+                        st.markdown(f"📌 **{title}:**\n\n{v_highlighted}")
         else:
             st.markdown(str(ringkasan))
 
     if psikologi:
+        st.markdown("---")
         st.markdown("### 🧠 Psikologi Audiens")
         if isinstance(psikologi, dict):
             for k, v in psikologi.items():
-                if isinstance(v, str):
-                    st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+                title = k.replace('_', ' ').title()
+                with st.expander(f"🧩 {title}", expanded=True):
+                    if isinstance(v, list):
+                        for item in v:
+                            st.markdown(f"- {item}")
+                    elif isinstance(v, str):
+                        st.markdown(v)
+                    else:
+                        st.json(v)
         else:
             st.markdown(str(psikologi))
 
@@ -834,42 +856,44 @@ def render_segmen(result: dict):
     shots = result.get("shots", [])
 
     # Cek momen highlight di dalam video_panjang atau di root JSON
-    momen = video_panjang.get("momen_highlight_sumber", [])
-    if not momen and "momen_highlight_sumber" in result:
-        momen = result.get("momen_highlight_sumber", [])
+    momen = video_panjang.get("momen_highlight_sumber", result.get("momen_highlight_sumber", []))
 
     if momen:
         st.markdown("### 🎬 Momen Highlight Sumber")
-        # Jika AI mengembalikan dict bukan list, ubah jadi list
+        
+        # Normalisasi jika AI mengembalikan Dictionary { "07:49": "deskripsi" }
         if isinstance(momen, dict):
-            momen = [momen]
+            momen = [{"waktu": k, "deskripsi": v} for k, v in momen.items()]
+        elif isinstance(momen, str):
+            momen = [{"deskripsi": momen}]
             
         for m in momen:
             if isinstance(m, dict):
-                # 1. Coba tangkap berbagai variasi nama 'kunci' (key) yang mungkin di-generate AI
-                waktu = m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', ''))))
-                deskripsi = m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', '')))))
+                waktu = str(m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', '')))))
+                deskripsi = str(m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', ''))))))
                 
-                # 2. Jika key AI benar-benar berbeda, ambil nilai dari urutan 1 dan 2 secara paksa
+                # Jika key AI benar-benar berbeda, ambil nilai dari urutan 1 dan 2 secara paksa
                 if not waktu and not deskripsi and len(m) > 0:
                     keys = list(m.keys())
                     if len(keys) >= 2:
-                        waktu = m[keys[0]]
-                        deskripsi = m[keys[1]]
+                        waktu = str(m[keys[0]])
+                        deskripsi = str(m[keys[1]])
                     else:
-                        deskripsi = m[keys[0]]
+                        deskripsi = str(m[keys[0]])
                 
-                # 3. Format cetak yang rapi tanpa memunculkan bintang empat (****) jika kosong
-                waktu_teks = f"**{waktu}**" if waktu else ""
-                pemisah = " — " if waktu and deskripsi else ""
-                st.markdown(f"⏱️ {waktu_teks}{pemisah}{deskripsi}")
+                waktu = waktu.strip()
+                deskripsi = deskripsi.strip()
                 
+                # Format cetak yang rapi di dalam kotak Info
+                if waktu and deskripsi:
+                    st.info(f"⏱️ **{waktu}** — {deskripsi}")
+                elif deskripsi:
+                    st.info(f"💡 {deskripsi}")
+                elif waktu:
+                    st.info(f"⏱️ **{waktu}**")
+                    
             elif isinstance(m, str):
-                # Jika AI hanya memberikan list berupa teks biasa (bukan format JSON terstruktur)
-                st.markdown(f"⏱️ {m}")
-            else:
-                # Fallback terakhir jika datanya sangat aneh
-                st.write(m)
+                st.info(f"⏱️ {m}")
 
     if shots:
         st.markdown("### 🎬 Daftar Susunan Shot / Segmen")
@@ -878,9 +902,8 @@ def render_segmen(result: dict):
                 num = shot.get("shot_number", "?")
                 segmen = shot.get("segmen", {})
                 
-                # Fallback key untuk start dan end time
-                start = segmen.get('start_time', segmen.get('waktu_mulai', ''))
-                end = segmen.get('end_time', segmen.get('waktu_selesai', ''))
+                start = str(segmen.get('start_time', segmen.get('waktu_mulai', '')))
+                end = str(segmen.get('end_time', segmen.get('waktu_selesai', '')))
                 
                 with st.expander(f"📌 Shot #{num} ({start} - {end})", expanded=True):
                     col1, col2 = st.columns([1, 3])
