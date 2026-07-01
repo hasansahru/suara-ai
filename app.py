@@ -636,7 +636,7 @@ def run_analysis(youtube_url: str):
         target_min_seconds = duration_conf.get("min_seconds")
         target_max_seconds = duration_conf.get("max_seconds")
 
-        # --- ESTIMASI TOKEN (KODE BARU) ---
+        # --- ESTIMASI TOKEN ---
         output_type_id = output_type_conf.get("id", "")
         estimated_tokens = estimate_max_tokens(output_type_id, shot_count)
 
@@ -799,11 +799,15 @@ def render_ringkasan(result: dict):
                     st.markdown(f"📌 **{title}:**")
                     for item in v:
                         st.markdown(f"- {item}")
+                elif isinstance(v, dict):
+                    st.markdown(f"📌 **{title}:**")
+                    for sub_k, sub_v in v.items():
+                        st.markdown(f"- **{sub_k.replace('_', ' ').title()}:** {sub_v}")
                 elif isinstance(v, str):
-                    # Highlight waktu format (00:00 atau 00:00:00 atau rentang 00:00-00:00) agar menonjol
-                    v_highlighted = re.sub(r'(\d{1,2}:\d{2}(?::\d{2})?(?:\s*-\s*\d{1,2}:\d{2}(?::\d{2})?)?)', r'**`\1`**', v)
+                    # Deteksi format waktu luas (contoh: 00:00, 00:00:00, 00:00 - 00:00) agar di-bold
+                    v_highlighted = re.sub(r'(\b\d{1,2}:\d{2}(?::\d{2})?\b(?:\s*[-—s/d]+\s*\b\d{1,2}:\d{2}(?::\d{2})?\b)?)', r'**`\1`**', v)
                     
-                    if "Hook" in title or "Opening" in title:
+                    if "Hook" in title or "Opening" in title or "Pembuka" in title:
                         st.success(f"🪝 **{title}:**\n\n{v_highlighted}")
                     elif "Durasi" in title or "Struktur" in title or "Waktu" in title:
                         st.info(f"⏱️ **{title}:**\n\n{v_highlighted}")
@@ -842,8 +846,26 @@ def render_strategi(result: dict):
     if strategi:
         st.markdown("### 🎯 Strategi Konten")
         for k, v in strategi.items():
-            if isinstance(v, str):
-                st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+            title = k.replace('_', ' ').title()
+            if isinstance(v, list):
+                st.markdown(f"📌 **{title}:**")
+                for item in v:
+                    if isinstance(item, dict):
+                        # Handle list of dicts (seperti outline)
+                        babak = item.get("babak", item.get("judul", ""))
+                        isi = item.get("isi", item.get("deskripsi", str(item)))
+                        st.markdown(f"- **{babak}:** {isi}")
+                    else:
+                        st.markdown(f"- {item}")
+            elif isinstance(v, dict):
+                st.markdown(f"📌 **{title}:**")
+                for sub_k, sub_v in v.items():
+                    st.markdown(f"- **{sub_k.replace('_', ' ').title()}:** {sub_v}")
+            elif isinstance(v, str):
+                if "Opening" in title or "Hook" in title:
+                    st.success(f"🎬 **{title}:**\n\n{v}")
+                else:
+                    st.markdown(f"**{title}:** {v}")
 
     if skor:
         st.markdown("### 📈 Skor Growth")
@@ -855,11 +877,47 @@ def render_segmen(result: dict):
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
 
-    # Cek momen highlight di dalam video_panjang atau di root JSON
+    # --- BAGIAN 1: RENDER TARGET VIDEO PANJANG & OPENING ---
+    if video_panjang:
+        # AI sering menaruh di key 'segmen', 'opening', 'opening_60_detik', dll
+        vp_segmen = video_panjang.get("segmen", {})
+        vp_opening = video_panjang.get("opening_60_detik", video_panjang.get("opening", video_panjang.get("opening_terbaik", "")))
+        
+        # Cari juga opening di strategi_konten kalau tersesat di sana
+        if not vp_opening:
+            sk = video_panjang.get("strategi_konten", {})
+            vp_opening = sk.get("opening_60_detik", sk.get("opening", ""))
+
+        if vp_segmen or vp_opening:
+            st.markdown("### 🎞️ Konsep & Target Video Panjang")
+
+        if vp_segmen:
+            if isinstance(vp_segmen, dict):
+                start = str(vp_segmen.get('start_time', vp_segmen.get('waktu_mulai', '')))
+                end = str(vp_segmen.get('end_time', vp_segmen.get('waktu_selesai', '')))
+                dur = str(vp_segmen.get('durasi', '')).split(' ')[0]
+                
+                if start and end:
+                    st.success(f"✂️ **Target Potongan Video Utama:** Menit **`{start}`** sampai **`{end}`** (Durasi Target: {dur})")
+                
+                alasan = vp_segmen.get('alasan', vp_segmen.get('keterangan', ''))
+                if alasan:
+                    st.markdown(f"**Alasan Pemilihan Area Ini:** {alasan}")
+            elif isinstance(vp_segmen, str):
+                st.success(f"✂️ **Target Potongan Video Utama:** {vp_segmen}")
+
+        if vp_opening:
+            st.info(f"🎬 **Konsep Opening 60 Detik Pertama:**\n\n{vp_opening}")
+
+        if vp_segmen or vp_opening:
+            st.markdown("---")
+
+
+    # --- BAGIAN 2: MOMEN HIGHLIGHT SUMBER ---
     momen = video_panjang.get("momen_highlight_sumber", result.get("momen_highlight_sumber", []))
 
     if momen:
-        st.markdown("### 🎬 Momen Highlight Sumber")
+        st.markdown("### 📌 Momen Highlight Sumber (Dari Video Asli)")
         
         # Normalisasi jika AI mengembalikan Dictionary { "07:49": "deskripsi" }
         if isinstance(momen, dict):
@@ -893,10 +951,21 @@ def render_segmen(result: dict):
                     st.info(f"⏱️ **{waktu}**")
                     
             elif isinstance(m, str):
-                st.info(f"⏱️ {m}")
+                # Deteksi jika AI kirim text utuh "14 menit 1 detik: penjelasan blabla"
+                if ":" in m and not re.match(r'^\d{1,2}:\d{2}', m):
+                    parts = m.split(":", 1)
+                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
+                elif "-" in m and not re.match(r'^\d{1,2}:\d{2}', m):
+                    parts = m.split("-", 1)
+                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
+                else:
+                    st.info(f"⏱️ {m}")
 
+    # --- BAGIAN 3: SHOTS / SEGMEN PENDEK ---
     if shots:
-        st.markdown("### 🎬 Daftar Susunan Shot / Segmen")
+        if video_panjang or momen:
+            st.markdown("---")
+        st.markdown("### 🎬 Daftar Susunan Shot / Segmen Pendek")
         for shot in shots:
             if isinstance(shot, dict):
                 num = shot.get("shot_number", "?")
