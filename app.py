@@ -917,6 +917,10 @@ def render_thumbnail(result: dict):
         komposisi = thumb_data.get('komposisi', thumb_data.get('komposisi_objek', '-'))
         st.markdown(f"📐 **Komposisi Objek:** {komposisi}")
         
+        teks_thumb = thumb_data.get('teks_thumbnail', thumb_data.get('teks', ''))
+        if teks_thumb:
+            st.markdown(f"💬 **Teks/Copy Thumbnail:** `{teks_thumb}`")
+        
         # Tampilkan Palet Warna
         warna = thumb_data.get("warna", thumb_data.get("palet_warna", []))
         if warna:
@@ -1047,11 +1051,29 @@ def render_editing(result: dict):
 
 def render_prediksi(result: dict):
     """Render section Prediksi Performa."""
-    prediksi = result.get("prediksi_performa", {})
-    if prediksi:
-        st.markdown("### 📈 Prediksi Performa")
-        for k, v in prediksi.items():
-            st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    if video_panjang:
+        prediksi = video_panjang.get("prediksi_performa", {})
+        if prediksi:
+            st.markdown("### 📈 Prediksi Performa Video Utama")
+            for k, v in prediksi.items():
+                st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            prediksi = shot.get("prediksi_performa", {})
+            num = shot.get("shot_number", "?")
+            if prediksi:
+                with st.expander(f"Shot #{num} — Prediksi Performa", expanded=True):
+                    skor = prediksi.get("skor_keseluruhan")
+                    if skor:
+                        st.metric(label="⭐ Skor Keseluruhan", value=f"{skor} / 10")
+                    
+                    for k, v in prediksi.items():
+                        if k != "skor_keseluruhan":
+                            st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
 
 
 def render_checklist(result: dict):
