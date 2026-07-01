@@ -833,13 +833,43 @@ def render_segmen(result: dict):
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
 
-    if video_panjang:
-        momen = video_panjang.get("momen_highlight_sumber", [])
-        if momen:
-            st.markdown("### 🎬 Momen Highlight Sumber")
-            for m in momen:
-                if isinstance(m, dict):
-                    st.markdown(f"⏱️ **{m.get('timestamp', '')}** — {m.get('deskripsi', '')}")
+    # Cek momen highlight di dalam video_panjang atau di root JSON
+    momen = video_panjang.get("momen_highlight_sumber", [])
+    if not momen and "momen_highlight_sumber" in result:
+        momen = result.get("momen_highlight_sumber", [])
+
+    if momen:
+        st.markdown("### 🎬 Momen Highlight Sumber")
+        # Jika AI mengembalikan dict bukan list, ubah jadi list
+        if isinstance(momen, dict):
+            momen = [momen]
+            
+        for m in momen:
+            if isinstance(m, dict):
+                # 1. Coba tangkap berbagai variasi nama 'kunci' (key) yang mungkin di-generate AI
+                waktu = m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', ''))))
+                deskripsi = m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', '')))))
+                
+                # 2. Jika key AI benar-benar berbeda, ambil nilai dari urutan 1 dan 2 secara paksa
+                if not waktu and not deskripsi and len(m) > 0:
+                    keys = list(m.keys())
+                    if len(keys) >= 2:
+                        waktu = m[keys[0]]
+                        deskripsi = m[keys[1]]
+                    else:
+                        deskripsi = m[keys[0]]
+                
+                # 3. Format cetak yang rapi tanpa memunculkan bintang empat (****) jika kosong
+                waktu_teks = f"**{waktu}**" if waktu else ""
+                pemisah = " — " if waktu and deskripsi else ""
+                st.markdown(f"⏱️ {waktu_teks}{pemisah}{deskripsi}")
+                
+            elif isinstance(m, str):
+                # Jika AI hanya memberikan list berupa teks biasa (bukan format JSON terstruktur)
+                st.markdown(f"⏱️ {m}")
+            else:
+                # Fallback terakhir jika datanya sangat aneh
+                st.write(m)
 
     if shots:
         st.markdown("### 🎬 Daftar Susunan Shot / Segmen")
@@ -848,14 +878,18 @@ def render_segmen(result: dict):
                 num = shot.get("shot_number", "?")
                 segmen = shot.get("segmen", {})
                 
-                with st.expander(f"📌 Shot #{num} ({segmen.get('start_time', '')} - {segmen.get('end_time', '')})", expanded=True):
+                # Fallback key untuk start dan end time
+                start = segmen.get('start_time', segmen.get('waktu_mulai', ''))
+                end = segmen.get('end_time', segmen.get('waktu_selesai', ''))
+                
+                with st.expander(f"📌 Shot #{num} ({start} - {end})", expanded=True):
                     col1, col2 = st.columns([1, 3])
                     with col1:
                         dur = str(segmen.get('durasi', '')).split(' ')[0]
                         st.metric(label="⏱️ Durasi", value=f"{dur} s")
                     with col2:
                         st.markdown("**Alasan Pemilihan Segmen:**")
-                        st.write(segmen.get('alasan', '-'))
+                        st.write(segmen.get('alasan', segmen.get('keterangan', '-')))
 
 
 def render_judul(result: dict):
