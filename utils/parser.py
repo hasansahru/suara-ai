@@ -21,7 +21,7 @@ def parse_ai_response(raw_text: str) -> dict:
     
     json_str = raw_text[first_bracket_idx:]
     
-    # Bersihkan trailing markdown (```) di akhir teks yang sering membuat parsing gagal
+    # Bersihkan trailing markdown (```) di akhir teks
     json_str = json_str.strip()
     json_str = re.sub(r'`+$', '', json_str).strip()
     
@@ -31,10 +31,7 @@ def parse_ai_response(raw_text: str) -> dict:
         return _repair_and_parse_json(json_str, original_error)
 
 def _repair_and_parse_json(json_str: str, original_error: Exception) -> dict:
-    """
-    Memperbaiki JSON yang terpotong dengan menutup string dan kurung yang terbuka,
-    serta membersihkan trailing comma.
-    """
+    """Memperbaiki JSON yang terpotong."""
     stack = []
     in_string = False
     escape_char = False
@@ -80,10 +77,7 @@ def _repair_and_parse_json(json_str: str, original_error: Exception) -> dict:
             repaired_json['_is_repaired_partial_result'] = True
         return repaired_json
     except json.JSONDecodeError as repair_error:
-        error_msg = (
-            f"Gagal mem-parsing JSON. Teks terpotong terlalu parah untuk diselamatkan. "
-            f"Error asli: {original_error}. Error setelah repair: {repair_error}."
-        )
+        error_msg = f"Gagal mem-parsing JSON. Error asli: {original_error}."
         raise AIResponseParseError(error_msg)
 
 def enforce_shot_count(result: dict, shot_count: int) -> dict:
@@ -103,7 +97,7 @@ def get_shot_segment_list(result: dict) -> list:
     return segments
 
 def check_segment_duration_mismatch(segments: list, target_min, target_max) -> list:
-    """Verifikasi apakah durasi segmen di dalam target. Mengembalikan pesan peringatan jika melenceng."""
+    """Verifikasi apakah durasi segmen di dalam target."""
     warnings = []
     if target_min is None or target_max is None:
         return warnings
@@ -134,5 +128,4 @@ def check_segment_duration_mismatch(segments: list, target_min, target_max) -> l
                         f"Durasi segmen shot #{i+1} ({duration} detik) di luar rentang target "
                         f"({target_min}-{target_max} detik)."
                     )
-    
     return warnings
