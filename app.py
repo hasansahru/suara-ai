@@ -504,4 +504,728 @@ def run_analysis(youtube_url: str):
 
     if not st.session_state.selected_model:
         st.session_state.last_error = (
-            "P
+            "Pilih atau ketik model AI terlebih dahulu di sidebar."
+        )
+        st.session_state.processing = False
+        st.rerun()
+        return
+
+    st.session_state.processing = True
+    st.session_state.analysis_result = None
+    st.session_state.generated_content = None
+
+    progress_bar = st.progress(0, text="Memulai pipeline analisis...")
+    total_steps = 5
+
+    # --- Bangun proxy config ---
+    proxy_mode = st.session_state.get("proxy_mode", "none")
+    proxy_setting = youtube_utils.ProxySetting(
+        mode=proxy_mode,
+        http_url=st.session_state.get("sidebar_generic_http", ""),
+        https_url=st.session_state.get("sidebar_generic_https", ""),
+        webshare_username=st.session_state.get("sidebar_ws_user", ""),
+        webshare_password=st.session_state.get("sidebar_ws_pass", ""),
+    )
+
+    try:
+        proxy_config = youtube_utils.build_proxy_config(proxy_setting)
+    except youtube_utils.YouTubeUtilsError as exc:
+        st.session_state.last_error = str(exc)
+        st.session_state.processing = False
+        st.rerun()
+        return
+
+    try:
+        video_title = ""
+        transcript_text = ""
+
+        # Step 1: Ambil metadata + transkrip
+        ui.step_progress(1, total_steps, "Mengambil data video / transkrip...", progress_bar)
+
+        if uploaded_file is not None:
+            raw_bytes = uploaded_file.read()
+            transcript_text = raw_bytes.decode("utf-8", errors="ignore")
+            if youtube_url:
+                try:
+                    meta = youtube_utils.get_video_metadata(youtube_url)
+                    video_title = meta.get("title", "")
+                except youtube_utils.YouTubeUtilsError:
+                    video_title = ""
+
+        elif pasted_transcript and pasted_transcript.strip():
+            transcript_text = pasted_transcript.strip()
+            if youtube_url:
+                try:
+                    meta = youtube_utils.get_video_metadata(youtube_url)
+                    video_title = meta.get("title", "")
+                except youtube_utils.YouTubeUtilsError:
+                    video_title = ""
+
+        else:
+            video_id = youtube_utils.extract_video_id(youtube_url)
+            if not video_id:
+                raise youtube_utils.YouTubeUtilsError(
+                    "URL YouTube tidak valid. Pastikan formatnya benar, contoh: "
+                    "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+                )
+
+            try:
+                meta = youtube_utils.get_video_metadata(youtube_url)
+                video_title = meta.get("title", "")
+            except youtube_utils.YouTubeUtilsError:
+                video_title = ""
+
+            transcript_obj = youtube_utils.get_video_transcript(
+                video_id,
+                proxy_config=proxy_config,
+            )
+            transcript_text = transcript_obj.full_text
+
+        if not transcript_text or not transcript_text.strip():
+            raise ValueError("Transkrip kosong. Pastikan video memiliki transkrip/subtitle.")
+
+        # Step 2: Parse analytics (opsional)
+        ui.step_progress(2, total_steps, "Menganalisis data channel...", progress_bar)
+        channel_summary = None
+        try:
+            analytics_files = st.session_state.get("analytics_files") or []
+            if analytics_files:
+                channel_summary, analytics_warnings = analytics_parser.process_uploaded_analytics(
+                    st.session_state.selected_channel, analytics_files
+                )
+                for w in analytics_warnings:
+                    st.session_state.pending_warnings.append(w)
+        except Exception:
+            channel_summary = None
+
+        # Step 3: Bangun system prompt
+        ui.step_progress(3, total_steps, "Menyusun prompt AI...", progress_bar)
+
+        channel_id = st.session_state.selected_channel
+        system_prompt = prompt_loader.build_system_prompt(channel_id)
+
+        # Injeksi analytics summary ke prompt jika ada
+        if channel_summary:
+            system_prompt += "\n\n---\n\n## ANALYTICS DATA CHANNEL\n"
+            system_prompt += channel_summary.to_prompt_text()
+
+        # Step 4: Kirim ke AI
+        ui.step_progress(4, total_steps, "Mengirim ke AI & menunggu respons...", progress_bar)
+
+        prov_config = _get_provider_config(st.session_state.selected_provider)
+        if not prov_config:
+            raise ValueError("Konfigurasi provider tidak ditemukan.")
+
+        mode = prov_config.get("mode", "openai_compatible")
+        base_url = prov_config.get("default_base_url", "")
+        api_key_env = prov_config.get("api_key_env", "")
+        api_key_input = st.session_state.get("sidebar_api_key", "")
+        custom_endpoint = st.session_state.get("sidebar_base_url", "")
+
+        if custom_endpoint:
+            base_url = custom_endpoint
+
+        output_type_conf = st.session_state.get("output_type_conf") or {}
+        duration_conf = st.session_state.get("duration_conf") or {}
+        shot_count = st.session_state.get("shot_count")
+        segment_mode = st.session_state.get("segment_mode", "auto")
+        manual_start = st.session_state.get("manual_start")
+        manual_end = st.session_state.get("manual_end")
+        extra_notes = st.session_state.get("extra_notes")
+
+        target_min_seconds = duration_conf.get("min_seconds")
+        target_max_seconds = duration_conf.get("max_seconds")
+
+        # --- ESTIMASI TOKEN ---
+        output_type_id = output_type_conf.get("id", "")
+        estimated_tokens = estimate_max_tokens(output_type_id, shot_count)
+
+        user_content = ai_client.build_user_content(
+            video_title=video_title,
+            transcript_text=transcript_text,
+            output_type=output_type_conf.get("label", ""),
+            duration_label=duration_conf.get("label", ""),
+            segment_mode=segment_mode,
+            manual_start=manual_start,
+            manual_end=manual_end,
+            extra_notes=extra_notes,
+            shot_count=shot_count,
+            target_min_seconds=target_min_seconds,
+            target_max_seconds=target_max_seconds,
+        )
+
+        request = ai_client.AnalysisRequest(
+            system_prompt=system_prompt,
+            user_content=user_content,
+            mode=mode,
+            base_url=base_url,
+            model=st.session_state.selected_model or "",
+            max_tokens=estimated_tokens,
+            enable_thinking=st.session_state.get("thinking_enabled", True),
+            enable_code_execution=st.session_state.get("code_execution_enabled", False),
+            enable_web_search=st.session_state.get("web_search_enabled", False),
+        )
+
+        full_text, sources = ai_client.run_analysis(
+            request,
+            api_key=api_key_input,
+            api_key_env=api_key_env,
+        )
+
+        if not full_text:
+            raise ValueError("AI mengembalikan respons kosong.")
+
+        # Step 5: Parse hasil
+        ui.step_progress(5, total_steps, "Mem-parsing hasil analisis...", progress_bar)
+
+        try:
+            result = ai_parser.parse_ai_response(full_text)
+        except ai_parser.AIResponseParseError as exc:
+            st.session_state.pending_warnings.append(
+                f"⚠️ Respons AI tidak bisa di-parse sebagai JSON ({exc}). Menampilkan respons mentah."
+            )
+            result = {"raw_response": full_text}
+
+        # Potong shots jika melebihi shot_count yang diminta, dan cek kesesuaian durasi
+        if isinstance(result, dict) and shot_count:
+            result = ai_parser.enforce_shot_count(result, shot_count)
+            segments = ai_parser.get_shot_segment_list(result)
+            duration_warnings = ai_parser.check_segment_duration_mismatch(
+                segments, target_min_seconds, target_max_seconds
+            )
+            for w in duration_warnings:
+                st.session_state.pending_warnings.append(f"⚠️ {w}")
+
+        st.session_state.analysis_result = result
+        st.session_state.generated_content = result
+        st.session_state.analysis_sources = sources
+
+        st.success("✅ Analisis selesai!")
+
+    except Exception as e:
+        st.session_state.last_error = f"Gagal menganalisis: {e}"
+
+    finally:
+        st.session_state.processing = False
+        st.rerun()
+
+
+# ═══════════════════════════════════════════════════════════════
+# RENDER RESULTS
+# ═══════════════════════════════════════════════════════════════
+
+def render_results():
+    """Render hasil analisis dalam tabs."""
+    result = st.session_state.analysis_result
+    if not result:
+        return
+
+    output_settings = _load_json("output_setting.json")
+    sections = output_settings.get("sections", [])
+
+    sources = st.session_state.get("analysis_sources") or []
+    if sources:
+        with st.expander(f"🔍 Sumber Web Search ({len(sources)})"):
+            for src in sources:
+                st.markdown(f"- [{src.get('title', src.get('url', ''))}]({src.get('url', '')})")
+
+    # Tab names
+    tab_names = [f"{s.get('emoji', '')} {s.get('label', s.get('key', ''))}" for s in sections]
+    tab_names.append("📋 JSON Mentah")
+
+    tabs = st.tabs(tab_names)
+
+    for idx, section in enumerate(sections):
+        with tabs[idx]:
+            key = section.get("key", "")
+            label = section.get("label", key)
+            emoji = section.get("emoji", "")
+
+            if key == "ringkasan":
+                render_ringkasan(result)
+            elif key == "strategi":
+                render_strategi(result)
+            elif key == "segmen":
+                render_segmen(result)
+            elif key == "judul":
+                render_judul(result)
+            elif key == "thumbnail":
+                render_thumbnail(result)
+            elif key == "deskripsi":
+                render_deskripsi(result)
+            elif key == "seo":
+                render_seo(result)
+            elif key == "editing":
+                render_editing(result)
+            elif key == "prediksi":
+                render_prediksi(result)
+            elif key == "checklist":
+                render_checklist(result)
+            else:
+                # Generic render
+                data = result.get(key, result.get("video_panjang", {}).get(key))
+                if data:
+                    st.markdown(f"### {emoji} {label}".strip())
+                    ui.copy_block(json.dumps(data, ensure_ascii=False, indent=2), language="json")
+
+    # Tab JSON mentah
+    with tabs[-1]:
+        st.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
+        if st.button("📋 Salin JSON", key="copy_json_full"):
+            try:
+                import pyperclip
+                pyperclip.copy(json.dumps(result, ensure_ascii=False, indent=2))
+                st.toast("✅ JSON disalin ke clipboard!", icon="📋")
+            except Exception:
+                st.toast("⚠️ Salin manual dari kode di atas", icon="⚠️")
+
+
+# ═══════════════════════════════════════════════════════════════
+# OMNI-RENDERER REKURSIF (ANTI BADAI & FORMAT ERROR AI)
+# ═══════════════════════════════════════════════════════════════
+
+def format_value(v):
+    """Mendeteksi dan me-robus-kan semua string (khususnya highlight waktu)."""
+    v_str = str(v)
+    # Deteksi dan tebalkan semua format waktu yang muncul (cth: 01:23, 00:00:00, 00:00 - 01:00)
+    return re.sub(r'(\b\d{1,2}:\d{2}(?::\d{2})?\b(?:\s*[-—s/dto]+\s*\b\d{1,2}:\d{2}(?::\d{2})?\b)?)', r'**`\1`**', v_str)
+
+def build_md(data, level=0):
+    """Fungsi sakti untuk membongkar json berlapis berapapun dalamnya menjadi markdown rapi."""
+    md = ""
+    indent = "    " * level  # 4 spasi untuk nested list markdown yang valid
+    
+    if isinstance(data, dict):
+        for k, v in data.items():
+            title = str(k).replace('_', ' ').title()
+            if isinstance(v, (dict, list)):
+                md += f"{indent}- **{title}:**\n"
+                md += build_md(v, level + 1)
+            else:
+                md += f"{indent}- **{title}:** {format_value(v)}\n"
+                
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                # Ekstrak data 'babak' dan 'isi' agar tidak boros baris
+                if "babak" in item and "isi" in item:
+                    md += f"{indent}- **{item['babak']}:** {format_value(item['isi'])}\n"
+                else:
+                    md += f"{indent}- \n"
+                    md += build_md(item, level + 1)
+            elif isinstance(item, list):
+                md += f"{indent}- \n"
+                md += build_md(item, level + 1)
+            else:
+                md += f"{indent}- {format_value(item)}\n"
+    else:
+        md += f"{indent}{format_value(data)}\n"
+        
+    return md
+
+# ═══════════════════════════════════════════════════════════════
+# RENDER PER SECTION
+# ═══════════════════════════════════════════════════════════════
+
+def render_ringkasan(result: dict):
+    """Render section Ringkasan."""
+    ringkasan = result.get("ringkasan", {})
+    psikologi = result.get("psikologi_audiens", {})
+
+    if ringkasan:
+        st.markdown("### 📊 Ringkasan Analisis")
+        if isinstance(ringkasan, dict):
+            for k, v in ringkasan.items():
+                title = k.replace('_', ' ').title()
+                content_md = build_md(v, 0).strip()
+                
+                # Desain visual berdasarkan kategori
+                if "Hook" in title or "Opening" in title or "Pembuka" in title:
+                    st.success(f"🪝 **{title}**\n\n{content_md}")
+                elif "Durasi" in title or "Struktur" in title or "Waktu" in title:
+                    st.info(f"⏱️ **{title}**\n\n{content_md}")
+                else:
+                    st.markdown(f"### 📌 {title}\n{content_md}")
+        else:
+            st.markdown(str(ringkasan))
+
+    if psikologi:
+        st.markdown("---")
+        st.markdown("### 🧠 Psikologi Audiens")
+        if isinstance(psikologi, dict):
+            for k, v in psikologi.items():
+                title = k.replace('_', ' ').title()
+                content_md = build_md(v, 0).strip()
+                with st.expander(f"🧩 {title}", expanded=True):
+                    st.markdown(content_md)
+        else:
+            st.markdown(str(psikologi))
+
+
+def render_strategi(result: dict):
+    """Render section Strategi."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    source = video_panjang if video_panjang else (shots[0] if shots else {})
+    strategi = source.get("strategi_konten", {})
+    skor = result.get("skor_growth", {})
+
+    if strategi:
+        st.markdown("### 🎯 Strategi Konten")
+        for k, v in strategi.items():
+            title = k.replace('_', ' ').title()
+            content_md = build_md(v, 0).strip()
+            
+            if "Opening" in title or "Hook" in title:
+                st.success(f"🎬 **{title}**\n\n{content_md}")
+            elif "Target" in title or "Potongan" in title:
+                st.warning(f"✂️ **{title}**\n\n{content_md}")
+            else:
+                with st.expander(f"📌 {title}", expanded=True):
+                    st.markdown(content_md)
+
+    if skor:
+        st.markdown("### 📈 Skor Growth")
+        ui.render_score_grid(skor)
+
+
+def render_segmen(result: dict):
+    """Render section Segmen dengan visualisasi bersih."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    # Cek momen highlight di dalam video_panjang atau di root JSON
+    momen = video_panjang.get("momen_highlight_sumber", result.get("momen_highlight_sumber", []))
+
+    if momen:
+        st.markdown("### 🎬 Momen Highlight Sumber")
+        
+        # Normalisasi jika AI mengembalikan Dictionary { "07:49": "deskripsi" }
+        if isinstance(momen, dict):
+            momen = [{"waktu": k, "deskripsi": v} for k, v in momen.items()]
+        elif isinstance(momen, str):
+            momen = [{"deskripsi": momen}]
+            
+        for m in momen:
+            if isinstance(m, dict):
+                waktu = str(m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', '')))))
+                deskripsi = str(m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', ''))))))
+                
+                # Jika key AI benar-benar berbeda, ambil nilai dari urutan 1 dan 2 secara paksa
+                if not waktu and not deskripsi and len(m) > 0:
+                    keys = list(m.keys())
+                    if len(keys) >= 2:
+                        waktu = str(m[keys[0]])
+                        deskripsi = str(m[keys[1]])
+                    else:
+                        deskripsi = str(m[keys[0]])
+                
+                waktu = waktu.strip()
+                deskripsi = deskripsi.strip()
+                
+                # Format cetak yang rapi di dalam kotak Info
+                if waktu and deskripsi:
+                    st.info(f"⏱️ **{waktu}** — {deskripsi}")
+                elif deskripsi:
+                    st.info(f"💡 {deskripsi}")
+                elif waktu:
+                    st.info(f"⏱️ **{waktu}**")
+                    
+            elif isinstance(m, str):
+                # Deteksi jika AI kirim text utuh "14 menit 1 detik: penjelasan blabla"
+                if ":" in m and not re.match(r'^\d{1,2}:\d{2}', m):
+                    parts = m.split(":", 1)
+                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
+                elif "-" in m and not re.match(r'^\d{1,2}:\d{2}', m):
+                    parts = m.split("-", 1)
+                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
+                else:
+                    st.info(f"⏱️ {m}")
+
+    if shots:
+        st.markdown("### 🎬 Daftar Susunan Shot / Segmen")
+        for shot in shots:
+            if isinstance(shot, dict):
+                num = shot.get("shot_number", "?")
+                segmen = shot.get("segmen", {})
+                
+                start = str(segmen.get('start_time', segmen.get('waktu_mulai', '')))
+                end = str(segmen.get('end_time', segmen.get('waktu_selesai', '')))
+                
+                with st.expander(f"📌 Shot #{num} ({start} - {end})", expanded=True):
+                    col1, col2 = st.columns([1, 3])
+                    with col1:
+                        dur = str(segmen.get('durasi', '')).split(' ')[0]
+                        st.metric(label="⏱️ Durasi", value=f"{dur} s")
+                    with col2:
+                        st.markdown("**Alasan Pemilihan Segmen:**")
+                        st.write(segmen.get('alasan', segmen.get('keterangan', '-')))
+
+
+def render_judul(result: dict):
+    """Render section Judul dengan rekomendasi terbaik."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    def display_judul_block(judul_data, label_prefix=""):
+        if not judul_data:
+            return
+        if label_prefix:
+            st.markdown(f"#### {label_prefix}")
+        
+        # Tampilkan opsi judul
+        opsi = judul_data.get("opsi", [])
+        if opsi:
+            st.markdown("**Alternatif Variasi Judul:**")
+            for i, o in enumerate(opsi):
+                st.markdown(f"{i+1}. `{o}`")
+        
+        # Tampilkan best choice
+        best = judul_data.get("best_choice", "")
+        if best:
+            st.success(f"🏆 **Rekomendasi Terbaik:** {best}")
+            
+        # Tampilkan alasan
+        alasan = judul_data.get("alasan_best_choice", "")
+        if alasan:
+            st.info(f"💡 **Analisis Strategi:** {alasan}")
+
+    if video_panjang:
+        judul = video_panjang.get("judul", {})
+        if judul:
+            display_judul_block(judul, "Video Utama")
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            judul = shot.get("judul", {})
+            num = shot.get("shot_number", "?")
+            if judul:
+                with st.expander(f"Shot #{num} — Judul", expanded=True):
+                    display_judul_block(judul, "")
+
+
+def render_thumbnail(result: dict):
+    """Render section Thumbnail ke panduan visual."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    def display_thumb_block(thumb_data, label_prefix=""):
+        if not thumb_data:
+            return
+        if label_prefix:
+            st.markdown(f"#### 🖼️ {label_prefix}")
+        
+        konsep = thumb_data.get('konsep', thumb_data.get('ide_visual', '-'))
+        st.markdown(f"🧠 **Konsep Ide:** {konsep}")
+        
+        komposisi = thumb_data.get('komposisi', thumb_data.get('komposisi_objek', '-'))
+        st.markdown(f"📐 **Komposisi Objek:** {komposisi}")
+        
+        teks_thumb = thumb_data.get('teks_thumbnail', thumb_data.get('teks', ''))
+        if teks_thumb:
+            st.markdown(f"💬 **Teks/Copy Thumbnail:** `{teks_thumb}`")
+        
+        # Tampilkan Palet Warna
+        warna = thumb_data.get("warna", thumb_data.get("palet_warna", []))
+        if warna:
+            st.markdown("**🎨 Rekomendasi Palet Warna:**")
+            hex_cols = st.columns(max(len(warna), 1))
+            for idx, w_text in enumerate(warna):
+                hex_match = re.search(r'#([A-Fa-f0-9]{6})', str(w_text))
+                hex_code = hex_match.group(0) if hex_match else "#FFFFFF"
+                with hex_cols[idx]:
+                    try:
+                        st.color_picker(str(w_text)[:15], value=hex_code, key=f"cp_{label_prefix}_{idx}", disabled=True)
+                    except Exception:
+                        st.write(str(w_text))
+                    
+        psikologi = thumb_data.get('psikologi_warna', thumb_data.get('psikologi', '-'))
+        st.markdown(f"👁️ **Psikologi Warna & Kontras:** {psikologi}")
+        
+        prompt_ai = thumb_data.get("prompt_ai_image", thumb_data.get("prompt_midjourney", ""))
+        if prompt_ai:
+            st.code(prompt_ai, language="text")
+            st.caption("☝️ *Salin kode prompt di atas ke AI Image Generator (Midjourney/Flux/DALL-E)*")
+
+    if video_panjang:
+        thumb = video_panjang.get("thumbnail", {})
+        if thumb:
+            display_thumb_block(thumb, "Video Utama")
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            thumb = shot.get("thumbnail", {})
+            num = shot.get("shot_number", "?")
+            if thumb:
+                with st.expander(f"Shot #{num} — Thumbnail", expanded=True):
+                    display_thumb_block(thumb, "")
+
+
+def render_deskripsi(result: dict):
+    """Render section Deskripsi YouTube."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    if video_panjang:
+        desc = video_panjang.get("deskripsi_youtube", "")
+        if desc:
+            st.markdown("### 📝 Deskripsi YouTube")
+            st.text_area("Deskripsi", value=desc, height=200, disabled=True)
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            desc = shot.get("deskripsi_youtube", "")
+            num = shot.get("shot_number", "?")
+            if desc:
+                with st.expander(f"Shot #{num} — Deskripsi", expanded=True):
+                    st.text_area(
+                        f"Deskripsi Shot #{num}",
+                        value=desc,
+                        height=200,
+                        disabled=True,
+                    )
+
+
+def render_seo(result: dict):
+    """Render section SEO dengan rapi."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    def display_seo_block(seo_data):
+        tags = seo_data.get("tags", seo_data.get("keywords", []))
+        if tags:
+            st.markdown("**🏷️ Tags / Keywords:**")
+            st.markdown(" ".join([f"`{t}`" for t in tags]))
+        
+        hashtag = seo_data.get("hashtag", seo_data.get("hashtags", []))
+        if hashtag:
+            st.markdown("**#️⃣ Hashtags:**")
+            st.markdown(" ".join([f"`{h}`" for h in hashtag]))
+            
+        pinned = seo_data.get("pinned_comment", "")
+        if pinned:
+            st.markdown("**📌 Pinned Comment:**")
+            st.info(pinned)
+
+    if video_panjang:
+        seo = video_panjang.get("seo", {})
+        if seo:
+            st.markdown("### 🔍 SEO Video Utama")
+            display_seo_block(seo)
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            seo = shot.get("seo", {})
+            num = shot.get("shot_number", "?")
+            if seo:
+                with st.expander(f"Shot #{num} — SEO", expanded=True):
+                    display_seo_block(seo)
+
+
+def render_editing(result: dict):
+    """Render section Editing List."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+    
+    def display_editing(editing_data):
+        for k, v in editing_data.items():
+            title = k.replace('_', ' ').title()
+            if isinstance(v, list):
+                st.markdown(f"**{title}:**")
+                for item in v:
+                    st.markdown(f"- {item}")
+            elif isinstance(v, str):
+                st.markdown(f"**{title}:** {v}")
+            else:
+                st.markdown(build_md(v, 0))
+
+    if video_panjang:
+        editing = video_panjang.get("editing", {})
+        if editing:
+            st.markdown("### 🎞 Editing Video Utama")
+            display_editing(editing)
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            editing = shot.get("editing", {})
+            num = shot.get("shot_number", "?")
+            if editing:
+                with st.expander(f"Shot #{num} — Editing", expanded=True):
+                    display_editing(editing)
+
+
+def render_prediksi(result: dict):
+    """Render section Prediksi Performa."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    if video_panjang:
+        prediksi = video_panjang.get("prediksi_performa", {})
+        if prediksi:
+            st.markdown("### 📈 Prediksi Performa Video Utama")
+            for k, v in prediksi.items():
+                st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+
+    for shot in shots:
+        if isinstance(shot, dict):
+            prediksi = shot.get("prediksi_performa", {})
+            num = shot.get("shot_number", "?")
+            if prediksi:
+                with st.expander(f"Shot #{num} — Prediksi Performa", expanded=True):
+                    skor = prediksi.get("skor_keseluruhan")
+                    if skor:
+                        st.metric(label="⭐ Skor Keseluruhan", value=f"{skor} / 10")
+                    
+                    for k, v in prediksi.items():
+                        if k != "skor_keseluruhan":
+                            st.markdown(f"**{k.replace('_', ' ').title()}:** {v}")
+
+
+def render_checklist(result: dict):
+    """Render section Checklist Produksi."""
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    def display_checklist(checklist_data, prefix):
+        if not checklist_data:
+            return
+        if isinstance(checklist_data, list):
+            for idx, item in enumerate(checklist_data):
+                if isinstance(item, str):
+                    st.checkbox(item, key=f"check_{prefix}_{idx}")
+                elif isinstance(item, dict):
+                    label = item.get("task", item.get("item", str(item)))
+                    wajib = item.get("wajib", False)
+                    if wajib:
+                        label = f"**[WAJIB]** {label}"
+                    st.checkbox(label, key=f"check_{prefix}_{idx}")
+
+    # Cek checklist di luar (untuk video utama)
+    root_checklist = result.get("checklist_produksi", result.get("checklist", video_panjang.get("checklist", [])))
+    if root_checklist:
+        st.markdown("### ✅ Checklist Produksi Video Utama")
+        display_checklist(root_checklist, "root")
+
+    # Cek checklist di dalam setiap shot
+    for shot in shots:
+        if isinstance(shot, dict):
+            checklist = shot.get("checklist_produksi", shot.get("checklist", []))
+            num = shot.get("shot_number", "?")
+            if checklist:
+                with st.expander(f"Shot #{num} — Checklist Produksi", expanded=True):
+                    display_checklist(checklist, f"shot_{num}")
+
+
+# ═══════════════════════════════════════════════════════════════
+# MAIN
+# ═══════════════════════════════════════════════════════════════
+
+def main():
+    """Fungsi utama."""
+    render_sidebar()
+    render_main_content()
+
+
+if __name__ == "__main__":
+    main()
