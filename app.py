@@ -15,6 +15,7 @@ import os
 import base64
 import tempfile
 import re
+import html
 
 import streamlit as st
 
@@ -636,7 +637,7 @@ def run_analysis(youtube_url: str):
         target_min_seconds = duration_conf.get("min_seconds")
         target_max_seconds = duration_conf.get("max_seconds")
 
-        # --- ESTIMASI TOKEN ---
+        # --- ESTIMASI TOKEN (KODE BARU) ---
         output_type_id = output_type_conf.get("id", "")
         estimated_tokens = estimate_max_tokens(output_type_id, shot_count)
 
@@ -787,13 +788,12 @@ def render_results():
 def format_value(v):
     """Mendeteksi dan me-robus-kan semua string (khususnya highlight waktu)."""
     v_str = str(v)
-    # Deteksi dan tebalkan semua format waktu yang muncul (cth: 01:23, 00:00:00, 00:00 - 01:00)
     return re.sub(r'(\b\d{1,2}:\d{2}(?::\d{2})?\b(?:\s*[-—s/dto]+\s*\b\d{1,2}:\d{2}(?::\d{2})?\b)?)', r'**`\1`**', v_str)
 
 def build_md(data, level=0):
     """Fungsi sakti untuk membongkar json berlapis berapapun dalamnya menjadi markdown rapi."""
     md = ""
-    indent = "    " * level  # 4 spasi untuk nested list markdown yang valid
+    indent = "    " * level  
     
     if isinstance(data, dict):
         for k, v in data.items():
@@ -807,7 +807,6 @@ def build_md(data, level=0):
     elif isinstance(data, list):
         for item in data:
             if isinstance(item, dict):
-                # Ekstrak data 'babak' dan 'isi' agar tidak boros baris
                 if "babak" in item and "isi" in item:
                     md += f"{indent}- **{item['babak']}:** {format_value(item['isi'])}\n"
                 else:
@@ -839,7 +838,6 @@ def render_ringkasan(result: dict):
                 title = k.replace('_', ' ').title()
                 content_md = build_md(v, 0).strip()
                 
-                # Desain visual berdasarkan kategori
                 if "Hook" in title or "Opening" in title or "Pembuka" in title:
                     st.success(f"🪝 **{title}**\n\n{content_md}")
                 elif "Durasi" in title or "Struktur" in title or "Waktu" in title:
@@ -895,13 +893,43 @@ def render_segmen(result: dict):
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
 
-    # Cek momen highlight di dalam video_panjang atau di root JSON
+    if video_panjang:
+        vp_segmen = video_panjang.get("segmen", {})
+        vp_opening = video_panjang.get("opening_60_detik", video_panjang.get("opening", video_panjang.get("opening_terbaik", "")))
+        
+        if not vp_opening:
+            sk = video_panjang.get("strategi_konten", {})
+            vp_opening = sk.get("opening_60_detik", sk.get("opening", ""))
+
+        if vp_segmen or vp_opening:
+            st.markdown("### 🎞️ Konsep & Target Video Panjang")
+
+        if vp_segmen:
+            if isinstance(vp_segmen, dict):
+                start = str(vp_segmen.get('start_time', vp_segmen.get('waktu_mulai', '')))
+                end = str(vp_segmen.get('end_time', vp_segmen.get('waktu_selesai', '')))
+                dur = str(vp_segmen.get('durasi', '')).split(' ')[0]
+                
+                if start and end:
+                    st.success(f"✂️ **Target Potongan Video Utama:** Menit **`{start}`** sampai **`{end}`** (Durasi Target: {dur})")
+                
+                alasan = vp_segmen.get('alasan', vp_segmen.get('keterangan', ''))
+                if alasan:
+                    st.markdown(f"**Alasan Pemilihan Area Ini:** {alasan}")
+            elif isinstance(vp_segmen, str):
+                st.success(f"✂️ **Target Potongan Video Utama:** {vp_segmen}")
+
+        if vp_opening:
+            st.info(f"🎬 **Konsep Opening 60 Detik Pertama:**\n\n{vp_opening}")
+
+        if vp_segmen or vp_opening:
+            st.markdown("---")
+
     momen = video_panjang.get("momen_highlight_sumber", result.get("momen_highlight_sumber", []))
 
     if momen:
-        st.markdown("### 🎬 Momen Highlight Sumber")
+        st.markdown("### 📌 Momen Highlight Sumber (Dari Video Asli)")
         
-        # Normalisasi jika AI mengembalikan Dictionary { "07:49": "deskripsi" }
         if isinstance(momen, dict):
             momen = [{"waktu": k, "deskripsi": v} for k, v in momen.items()]
         elif isinstance(momen, str):
@@ -912,7 +940,6 @@ def render_segmen(result: dict):
                 waktu = str(m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', '')))))
                 deskripsi = str(m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', ''))))))
                 
-                # Jika key AI benar-benar berbeda, ambil nilai dari urutan 1 dan 2 secara paksa
                 if not waktu and not deskripsi and len(m) > 0:
                     keys = list(m.keys())
                     if len(keys) >= 2:
@@ -924,7 +951,6 @@ def render_segmen(result: dict):
                 waktu = waktu.strip()
                 deskripsi = deskripsi.strip()
                 
-                # Format cetak yang rapi di dalam kotak Info
                 if waktu and deskripsi:
                     st.info(f"⏱️ **{waktu}** — {deskripsi}")
                 elif deskripsi:
@@ -933,7 +959,6 @@ def render_segmen(result: dict):
                     st.info(f"⏱️ **{waktu}**")
                     
             elif isinstance(m, str):
-                # Deteksi jika AI kirim text utuh "14 menit 1 detik: penjelasan blabla"
                 if ":" in m and not re.match(r'^\d{1,2}:\d{2}', m):
                     parts = m.split(":", 1)
                     st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
@@ -944,7 +969,9 @@ def render_segmen(result: dict):
                     st.info(f"⏱️ {m}")
 
     if shots:
-        st.markdown("### 🎬 Daftar Susunan Shot / Segmen")
+        if video_panjang or momen:
+            st.markdown("---")
+        st.markdown("### 🎬 Daftar Susunan Shot / Segmen Pendek")
         for shot in shots:
             if isinstance(shot, dict):
                 num = shot.get("shot_number", "?")
@@ -974,19 +1001,16 @@ def render_judul(result: dict):
         if label_prefix:
             st.markdown(f"#### {label_prefix}")
         
-        # Tampilkan opsi judul
         opsi = judul_data.get("opsi", [])
         if opsi:
             st.markdown("**Alternatif Variasi Judul:**")
             for i, o in enumerate(opsi):
                 st.markdown(f"{i+1}. `{o}`")
         
-        # Tampilkan best choice
         best = judul_data.get("best_choice", "")
         if best:
             st.success(f"🏆 **Rekomendasi Terbaik:** {best}")
             
-        # Tampilkan alasan
         alasan = judul_data.get("alasan_best_choice", "")
         if alasan:
             st.info(f"💡 **Analisis Strategi:** {alasan}")
@@ -1026,7 +1050,6 @@ def render_thumbnail(result: dict):
         if teks_thumb:
             st.markdown(f"💬 **Teks/Copy Thumbnail:** `{teks_thumb}`")
         
-        # Tampilkan Palet Warna
         warna = thumb_data.get("warna", thumb_data.get("palet_warna", []))
         if warna:
             st.markdown("**🎨 Rekomendasi Palet Warna:**")
@@ -1183,23 +1206,42 @@ def render_prediksi(result: dict):
 
 
 def render_checklist(result: dict):
-    """Render section Checklist Produksi."""
+    """Render section Checklist Produksi dengan HTML anti-loncat."""
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
+
+    def simple_md_to_html(text):
+        text = html.escape(text)
+        text = re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', text)
+        text = re.sub(r'`(.*?)`', r'<code style="background-color: rgba(128,128,128,0.2); padding: 0.1rem 0.3rem; border-radius: 3px;">\1</code>', text)
+        return text
 
     def display_checklist(checklist_data, prefix):
         if not checklist_data:
             return
         if isinstance(checklist_data, list):
+            html_code = "<div style='display: flex; flex-direction: column; gap: 8px; margin-top: 10px; margin-bottom: 10px;'>"
             for idx, item in enumerate(checklist_data):
+                label = ""
+                wajib_badge = ""
                 if isinstance(item, str):
-                    st.checkbox(item, key=f"check_{prefix}_{idx}")
+                    label = item
                 elif isinstance(item, dict):
                     label = item.get("task", item.get("item", str(item)))
                     wajib = item.get("wajib", False)
                     if wajib:
-                        label = f"**[WAJIB]** {label}"
-                    st.checkbox(label, key=f"check_{prefix}_{idx}")
+                        wajib_badge = "<span style='background-color: #ff4b4b; color: white; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; margin-right: 8px; vertical-align: middle;'>WAJIB</span>"
+                
+                label_html = simple_md_to_html(label)
+                
+                html_code += f"""
+                <label style='display: flex; align-items: flex-start; cursor: pointer; padding: 10px 12px; border-radius: 6px; background-color: rgba(128, 128, 128, 0.08); transition: background-color 0.2s;'>
+                    <input type='checkbox' style='margin-top: 4px; margin-right: 12px; transform: scale(1.3); cursor: pointer;'>
+                    <div style='line-height: 1.5; font-size: 15px;'>{wajib_badge}{label_html}</div>
+                </label>
+                """
+            html_code += "</div>"
+            st.markdown(html_code, unsafe_allow_html=True)
 
     # Cek checklist di luar (untuk video utama)
     root_checklist = result.get("checklist_produksi", result.get("checklist", video_panjang.get("checklist", [])))
