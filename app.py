@@ -460,7 +460,14 @@ def render_main_content():
 # ═══════════════════════════════════════════════════════════════
 # ANALYSIS PIPELINE
 # ═══════════════════════════════════════════════════════════════
-
+def estimate_max_tokens(output_type_id: str, shot_count: int | None) -> int:
+    """Mengestimasi kebutuhan max_tokens berdasarkan jenis output dan jumlah shot."""
+    base_tokens = 4000
+    if output_type_id == "shorts" and shot_count:
+        return max(8000, base_tokens + (shot_count * 2000))
+    elif output_type_id == "long":
+        return 16000
+    return 16000
 def run_analysis(youtube_url: str):
     """Jalankan pipeline analisis lengkap."""
     if st.session_state.processing:
@@ -633,12 +640,35 @@ def run_analysis(youtube_url: str):
             target_max_seconds=target_max_seconds,
         )
 
+target_min_seconds = duration_conf.get("min_seconds")
+        target_max_seconds = duration_conf.get("max_seconds")
+
+        # --- MULAI KODE TAMBAHAN BARU ---
+        output_type_id = output_type_conf.get("id", "")
+        estimated_tokens = estimate_max_tokens(output_type_id, shot_count)
+        # --- AKHIR KODE TAMBAHAN BARU ---
+
+        user_content = ai_client.build_user_content(
+            video_title=video_title,
+            transcript_text=transcript_text,
+            output_type=output_type_conf.get("label", ""),
+            duration_label=duration_conf.get("label", ""),
+            segment_mode=segment_mode,
+            manual_start=manual_start,
+            manual_end=manual_end,
+            extra_notes=extra_notes,
+            shot_count=shot_count,
+            target_min_seconds=target_min_seconds,
+            target_max_seconds=target_max_seconds,
+        )
+
         request = ai_client.AnalysisRequest(
             system_prompt=system_prompt,
             user_content=user_content,
             mode=mode,
             base_url=base_url,
             model=st.session_state.selected_model or "",
+            max_tokens=estimated_tokens,  # <--- TAMBAHAN BARU DI SINI
             enable_thinking=st.session_state.get("thinking_enabled", True),
             enable_code_execution=st.session_state.get("code_execution_enabled", False),
             enable_web_search=st.session_state.get("web_search_enabled", False),
