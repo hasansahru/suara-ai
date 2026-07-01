@@ -120,7 +120,6 @@ def render_sidebar():
     with st.sidebar:
         st.markdown("## 🎬 Channel & Provider")
 
-        # --- Channel selection ---
         channels = prompt_loader.get_available_channels()
         channel_options = {c["emoji"] + " " + c["name"]: c["id"] for c in channels}
         selected_label = st.selectbox(
@@ -133,7 +132,6 @@ def render_sidebar():
 
         st.divider()
 
-        # --- Provider selection ---
         ai_settings = _get_ai_settings()
         providers = ai_settings.get("providers", [])
         PROVIDER_PLACEHOLDER = "— Pilih AI Provider —"
@@ -153,7 +151,6 @@ def render_sidebar():
                 st.session_state.selected_provider = None
                 st.caption("⚠️ Pilih provider AI terlebih dahulu untuk melanjutkan.")
 
-        # --- Model, API key & cek koneksi ---
         if st.session_state.selected_provider:
             prov_config = _get_provider_config(st.session_state.selected_provider)
 
@@ -267,7 +264,6 @@ def render_sidebar():
 
         st.divider()
 
-        # --- Proxy settings ---
         st.markdown("### 🌐 Proxy YouTube")
         proxy_mode = st.selectbox(
             "Mode Proxy",
@@ -283,7 +279,6 @@ def render_sidebar():
 
         st.divider()
 
-        # --- Upload transcript ---
         st.markdown("### 📄 Upload Transkrip")
         uploaded_file = st.file_uploader(
             "Upload .txt transkrip YouTube",
@@ -296,7 +291,6 @@ def render_sidebar():
             key="sidebar_paste",
         )
 
-        # --- Upload Analytics CSV (opsional) ---
         st.markdown("### 📊 Analytics Channel (opsional)")
         analytics_uploads = st.file_uploader(
             "Upload CSV export dari YouTube Studio Analytics (boleh lebih dari satu)",
@@ -310,7 +304,6 @@ def render_sidebar():
                 analytics_files.append((f.name, f.read()))
         st.session_state["analytics_files"] = analytics_files
 
-        # --- Thinking & Code Execution ---
         st.markdown("### ⚙️ Opsi Lanjutan")
         thinking = st.checkbox("🧠 Thinking Mode", value=True, key="sidebar_thinking")
         code_exec = st.checkbox("💻 Code Execution", value=False, key="sidebar_code_exec")
@@ -335,14 +328,12 @@ def render_main_content():
         "Reverse-engineer strategi video YouTube & hasilkan paket produksi orisinal siap upload."
     )
 
-    # --- Input section ---
     youtube_url = st.text_input(
         "🔗 URL Video YouTube (opsional)",
         placeholder="https://www.youtube.com/watch?v=XXXXXXXXXXX",
         key="main_url",
     )
 
-    # --- Pengaturan Output (tipe konten, durasi, jumlah shot, mode segmen) ---
     duration_settings = _load_json("duration_setting.json")
     output_types = duration_settings.get("output_types", [])
     segment_modes = duration_settings.get("segment_modes", [])
@@ -416,7 +407,6 @@ def render_main_content():
     st.session_state["manual_end"] = manual_end
     st.session_state["extra_notes"] = extra_notes
 
-    # --- Tombol Analisis ---
     col1, col2 = st.columns([3, 1])
     with col1:
         run_btn = st.button(
@@ -437,22 +427,18 @@ def render_main_content():
                 st.session_state.pop(k, None)
             st.rerun()
 
-    # --- Tampilkan error jika ada ---
     if st.session_state.last_error:
         st.error(f"❌ {st.session_state.last_error}")
         st.session_state.last_error = None
 
-    # --- Tampilkan warning yang tertunda (selamat dari st.rerun()) ---
     if st.session_state.get("pending_warnings"):
         for w in st.session_state.pending_warnings:
             st.warning(w)
         st.session_state.pending_warnings = []
 
-    # --- Jalankan analisis ---
     if run_btn:
         run_analysis(youtube_url)
 
-    # --- Tampilkan hasil ---
     if st.session_state.analysis_result:
         render_results()
 
@@ -462,7 +448,6 @@ def render_main_content():
 # ═══════════════════════════════════════════════════════════════
 
 def estimate_max_tokens(output_type_id: str, shot_count: int | None) -> int:
-    """Mengestimasi kebutuhan max_tokens berdasarkan jenis output dan jumlah shot."""
     base_tokens = 4000
     if output_type_id == "shorts" and shot_count:
         return max(8000, base_tokens + (shot_count * 2000))
@@ -471,11 +456,9 @@ def estimate_max_tokens(output_type_id: str, shot_count: int | None) -> int:
     return 16000
 
 def run_analysis(youtube_url: str):
-    """Jalankan pipeline analisis lengkap."""
     if st.session_state.processing:
         return
 
-    # Validasi input
     uploaded_file = st.session_state.get("uploaded_file")
     pasted_transcript = st.session_state.get("pasted_transcript", "")
     has_transcript = (
@@ -484,9 +467,7 @@ def run_analysis(youtube_url: str):
     )
 
     if not has_transcript and not youtube_url:
-        st.session_state.last_error = (
-            "Masukkan URL YouTube atau upload/paste transkrip terlebih dahulu."
-        )
+        st.session_state.last_error = "Masukkan URL YouTube atau upload/paste transkrip terlebih dahulu."
         st.session_state.processing = False
         st.rerun()
         return
@@ -504,9 +485,7 @@ def run_analysis(youtube_url: str):
         return
 
     if not st.session_state.selected_model:
-        st.session_state.last_error = (
-            "Pilih atau ketik model AI terlebih dahulu di sidebar."
-        )
+        st.session_state.last_error = "Pilih atau ketik model AI terlebih dahulu di sidebar."
         st.session_state.processing = False
         st.rerun()
         return
@@ -518,7 +497,6 @@ def run_analysis(youtube_url: str):
     progress_bar = st.progress(0, text="Memulai pipeline analisis...")
     total_steps = 5
 
-    # --- Bangun proxy config ---
     proxy_mode = st.session_state.get("proxy_mode", "none")
     proxy_setting = youtube_utils.ProxySetting(
         mode=proxy_mode,
@@ -540,7 +518,6 @@ def run_analysis(youtube_url: str):
         video_title = ""
         transcript_text = ""
 
-        # Step 1: Ambil metadata + transkrip
         ui.step_progress(1, total_steps, "Mengambil data video / transkrip...", progress_bar)
 
         if uploaded_file is not None:
@@ -566,8 +543,7 @@ def run_analysis(youtube_url: str):
             video_id = youtube_utils.extract_video_id(youtube_url)
             if not video_id:
                 raise youtube_utils.YouTubeUtilsError(
-                    "URL YouTube tidak valid. Pastikan formatnya benar, contoh: "
-                    "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+                    "URL YouTube tidak valid. Pastikan formatnya benar."
                 )
 
             try:
@@ -585,7 +561,6 @@ def run_analysis(youtube_url: str):
         if not transcript_text or not transcript_text.strip():
             raise ValueError("Transkrip kosong. Pastikan video memiliki transkrip/subtitle.")
 
-        # Step 2: Parse analytics (opsional)
         ui.step_progress(2, total_steps, "Menganalisis data channel...", progress_bar)
         channel_summary = None
         try:
@@ -599,18 +574,15 @@ def run_analysis(youtube_url: str):
         except Exception:
             channel_summary = None
 
-        # Step 3: Bangun system prompt
         ui.step_progress(3, total_steps, "Menyusun prompt AI...", progress_bar)
 
         channel_id = st.session_state.selected_channel
         system_prompt = prompt_loader.build_system_prompt(channel_id)
 
-        # Injeksi analytics summary ke prompt jika ada
         if channel_summary:
             system_prompt += "\n\n---\n\n## ANALYTICS DATA CHANNEL\n"
             system_prompt += channel_summary.to_prompt_text()
 
-        # Step 4: Kirim ke AI
         ui.step_progress(4, total_steps, "Mengirim ke AI & menunggu respons...", progress_bar)
 
         prov_config = _get_provider_config(st.session_state.selected_provider)
@@ -637,7 +609,6 @@ def run_analysis(youtube_url: str):
         target_min_seconds = duration_conf.get("min_seconds")
         target_max_seconds = duration_conf.get("max_seconds")
 
-        # --- ESTIMASI TOKEN (KODE BARU) ---
         output_type_id = output_type_conf.get("id", "")
         estimated_tokens = estimate_max_tokens(output_type_id, shot_count)
 
@@ -676,7 +647,6 @@ def run_analysis(youtube_url: str):
         if not full_text:
             raise ValueError("AI mengembalikan respons kosong.")
 
-        # Step 5: Parse hasil
         ui.step_progress(5, total_steps, "Mem-parsing hasil analisis...", progress_bar)
 
         try:
@@ -687,7 +657,6 @@ def run_analysis(youtube_url: str):
             )
             result = {"raw_response": full_text}
 
-        # Potong shots jika melebihi shot_count yang diminta, dan cek kesesuaian durasi
         if isinstance(result, dict) and shot_count:
             result = ai_parser.enforce_shot_count(result, shot_count)
             segments = ai_parser.get_shot_segment_list(result)
@@ -730,7 +699,6 @@ def render_results():
             for src in sources:
                 st.markdown(f"- [{src.get('title', src.get('url', ''))}]({src.get('url', '')})")
 
-    # Tab names
     tab_names = [f"{s.get('emoji', '')} {s.get('label', s.get('key', ''))}" for s in sections]
     tab_names.append("📋 JSON Mentah")
 
@@ -763,13 +731,11 @@ def render_results():
             elif key == "checklist":
                 render_checklist(result)
             else:
-                # Generic render
                 data = result.get(key, result.get("video_panjang", {}).get(key))
                 if data:
                     st.markdown(f"### {emoji} {label}".strip())
                     ui.copy_block(json.dumps(data, ensure_ascii=False, indent=2), language="json")
 
-    # Tab JSON mentah
     with tabs[-1]:
         st.code(json.dumps(result, ensure_ascii=False, indent=2), language="json")
         if st.button("📋 Salin JSON", key="copy_json_full"):
@@ -786,12 +752,12 @@ def render_results():
 # ═══════════════════════════════════════════════════════════════
 
 def format_value(v):
-    """Mendeteksi dan me-robus-kan semua string (khususnya highlight waktu)."""
+    """Mendeteksi dan menebalkan waktu (00:00)."""
     v_str = str(v)
     return re.sub(r'(\b\d{1,2}:\d{2}(?::\d{2})?\b(?:\s*[-—s/dto]+\s*\b\d{1,2}:\d{2}(?::\d{2})?\b)?)', r'**`\1`**', v_str)
 
 def build_md(data, level=0):
-    """Fungsi sakti untuk membongkar json berlapis berapapun dalamnya menjadi markdown rapi."""
+    """Bongkar JSON tak terduga jadi list markdown."""
     md = ""
     indent = "    " * level  
     
@@ -822,8 +788,9 @@ def build_md(data, level=0):
         
     return md
 
+
 # ═══════════════════════════════════════════════════════════════
-# RENDER PER SECTION
+# RENDER PER SECTION (DIUBAH SESUAI OUTPUT FORMAT VIDEO PANJANG)
 # ═══════════════════════════════════════════════════════════════
 
 def render_ringkasan(result: dict):
@@ -861,7 +828,7 @@ def render_ringkasan(result: dict):
 
 
 def render_strategi(result: dict):
-    """Render section Strategi."""
+    """Render section Strategi (Membedah Outline & Opening Video Panjang)."""
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
 
@@ -873,15 +840,43 @@ def render_strategi(result: dict):
         st.markdown("### 🎯 Strategi Konten")
         for k, v in strategi.items():
             title = k.replace('_', ' ').title()
-            content_md = build_md(v, 0).strip()
             
-            if "Opening" in title or "Hook" in title:
-                st.success(f"🎬 **{title}**\n\n{content_md}")
-            elif "Target" in title or "Potongan" in title:
-                st.warning(f"✂️ **{title}**\n\n{content_md}")
+            # FORMAT KHUSUS UNTUK OPENING 60 DETIK VIDEO PANJANG
+            if k == "opening_60_detik" and isinstance(v, dict):
+                st.success(f"🎬 **Konsep Opening 60 Detik**")
+                alasan_op = v.get("alasan", "")
+                if alasan_op:
+                    st.markdown(f"**Alasan:** {alasan_op}")
+                    
+                klips = v.get("klip", [])
+                for i, klp in enumerate(klips):
+                    if isinstance(klp, dict):
+                        st.info(
+                            f"**✂️ Klip {i+1} (Video Baru: `{klp.get('video_baru_start','')} - {klp.get('video_baru_end','')}`)**\n\n"
+                            f"Ambil dari sumber menit: **`{klp.get('sumber_start','')} - {klp.get('sumber_end','')}`**\n\n"
+                            f"💬 **Narasi:** \"{klp.get('narasi_sumber','')}\"\n\n"
+                            f"🎞️ **Editing:** {klp.get('catatan_editing','')}"
+                        )
+                        
+            # FORMAT KHUSUS UNTUK OUTLINE VIDEO PANJANG
+            elif k == "outline" and isinstance(v, list):
+                st.warning(f"📋 **Outline Video (Sesuai Durasi Target)**")
+                for babak in v:
+                    if isinstance(babak, dict):
+                        start = babak.get("start_estimate", "")
+                        end = babak.get("end_estimate", "")
+                        nama_babak = babak.get("babak", "")
+                        isi = babak.get("isi", "")
+                        st.markdown(f"- **`{start} - {end}` | {nama_babak}**: {isi}")
+            
+            # RENDERER DEFAULT UNTUK LAINNYA
             else:
-                with st.expander(f"📌 {title}", expanded=True):
-                    st.markdown(content_md)
+                content_md = build_md(v, 0).strip()
+                if "Hook" in title:
+                    st.success(f"🪝 **{title}**\n\n{content_md}")
+                else:
+                    with st.expander(f"📌 {title}", expanded=True):
+                        st.markdown(content_md)
 
     if skor:
         st.markdown("### 📈 Skor Growth")
@@ -889,46 +884,14 @@ def render_strategi(result: dict):
 
 
 def render_segmen(result: dict):
-    """Render section Segmen dengan visualisasi bersih."""
+    """Render section Segmen (Momen Highlight untuk Video Panjang)."""
     video_panjang = result.get("video_panjang", {})
     shots = result.get("shots", [])
-
-    if video_panjang:
-        vp_segmen = video_panjang.get("segmen", {})
-        vp_opening = video_panjang.get("opening_60_detik", video_panjang.get("opening", video_panjang.get("opening_terbaik", "")))
-        
-        if not vp_opening:
-            sk = video_panjang.get("strategi_konten", {})
-            vp_opening = sk.get("opening_60_detik", sk.get("opening", ""))
-
-        if vp_segmen or vp_opening:
-            st.markdown("### 🎞️ Konsep & Target Video Panjang")
-
-        if vp_segmen:
-            if isinstance(vp_segmen, dict):
-                start = str(vp_segmen.get('start_time', vp_segmen.get('waktu_mulai', '')))
-                end = str(vp_segmen.get('end_time', vp_segmen.get('waktu_selesai', '')))
-                dur = str(vp_segmen.get('durasi', '')).split(' ')[0]
-                
-                if start and end:
-                    st.success(f"✂️ **Target Potongan Video Utama:** Menit **`{start}`** sampai **`{end}`** (Durasi Target: {dur})")
-                
-                alasan = vp_segmen.get('alasan', vp_segmen.get('keterangan', ''))
-                if alasan:
-                    st.markdown(f"**Alasan Pemilihan Area Ini:** {alasan}")
-            elif isinstance(vp_segmen, str):
-                st.success(f"✂️ **Target Potongan Video Utama:** {vp_segmen}")
-
-        if vp_opening:
-            st.info(f"🎬 **Konsep Opening 60 Detik Pertama:**\n\n{vp_opening}")
-
-        if vp_segmen or vp_opening:
-            st.markdown("---")
 
     momen = video_panjang.get("momen_highlight_sumber", result.get("momen_highlight_sumber", []))
 
     if momen:
-        st.markdown("### 📌 Momen Highlight Sumber (Dari Video Asli)")
+        st.markdown("### 🎬 Momen Highlight Sumber (Dari Video Asli)")
         
         if isinstance(momen, dict):
             momen = [{"waktu": k, "deskripsi": v} for k, v in momen.items()]
@@ -937,40 +900,41 @@ def render_segmen(result: dict):
             
         for m in momen:
             if isinstance(m, dict):
-                waktu = str(m.get('timestamp', m.get('waktu', m.get('time', m.get('durasi', '')))))
-                deskripsi = str(m.get('deskripsi', m.get('keterangan', m.get('topik', m.get('isi', m.get('highlight', ''))))))
+                start = str(m.get('start_time', m.get('waktu_mulai', m.get('timestamp', ''))))
+                end = str(m.get('end_time', m.get('waktu_selesai', '')))
+                durasi = str(m.get('durasi', ''))
                 
-                if not waktu and not deskripsi and len(m) > 0:
+                deskripsi = str(m.get('alasan', m.get('deskripsi', m.get('keterangan', ''))))
+                
+                # Jika format AI aneh
+                if not start and not deskripsi and len(m) > 0:
                     keys = list(m.keys())
                     if len(keys) >= 2:
-                        waktu = str(m[keys[0]])
+                        start = str(m[keys[0]])
                         deskripsi = str(m[keys[1]])
                     else:
                         deskripsi = str(m[keys[0]])
                 
-                waktu = waktu.strip()
+                start = start.strip()
                 deskripsi = deskripsi.strip()
                 
-                if waktu and deskripsi:
-                    st.info(f"⏱️ **{waktu}** — {deskripsi}")
+                waktu_teks = f"**`{start}`**"
+                if end:
+                    waktu_teks += f" s/d **`{end}`**"
+                if durasi:
+                    waktu_teks += f" ({durasi})"
+                
+                if start and deskripsi:
+                    st.info(f"⏱️ {waktu_teks}\n\n💡 {deskripsi}")
                 elif deskripsi:
                     st.info(f"💡 {deskripsi}")
-                elif waktu:
-                    st.info(f"⏱️ **{waktu}**")
+                elif start:
+                    st.info(f"⏱️ {waktu_teks}")
                     
             elif isinstance(m, str):
-                if ":" in m and not re.match(r'^\d{1,2}:\d{2}', m):
-                    parts = m.split(":", 1)
-                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
-                elif "-" in m and not re.match(r'^\d{1,2}:\d{2}', m):
-                    parts = m.split("-", 1)
-                    st.info(f"⏱️ **{parts[0].strip()}** — {parts[1].strip()}")
-                else:
-                    st.info(f"⏱️ {m}")
+                st.info(f"⏱️ {m}")
 
     if shots:
-        if video_panjang or momen:
-            st.markdown("---")
         st.markdown("### 🎬 Daftar Susunan Shot / Segmen Pendek")
         for shot in shots:
             if isinstance(shot, dict):
@@ -1243,13 +1207,11 @@ def render_checklist(result: dict):
             html_code += "</div>"
             st.markdown(html_code, unsafe_allow_html=True)
 
-    # Cek checklist di luar (untuk video utama)
     root_checklist = result.get("checklist_produksi", result.get("checklist", video_panjang.get("checklist", [])))
     if root_checklist:
         st.markdown("### ✅ Checklist Produksi Video Utama")
         display_checklist(root_checklist, "root")
 
-    # Cek checklist di dalam setiap shot
     for shot in shots:
         if isinstance(shot, dict):
             checklist = shot.get("checklist_produksi", shot.get("checklist", []))
