@@ -1078,18 +1078,37 @@ def render_prediksi(result: dict):
 
 def render_checklist(result: dict):
     """Render section Checklist Produksi."""
-    checklist = result.get("checklist_produksi", result.get("checklist", []))
-    if checklist:
-        st.markdown("### ✅ Checklist Produksi")
-        if isinstance(checklist, list):
-            for item in checklist:
+    video_panjang = result.get("video_panjang", {})
+    shots = result.get("shots", [])
+
+    def display_checklist(checklist_data, prefix):
+        if not checklist_data:
+            return
+        if isinstance(checklist_data, list):
+            for idx, item in enumerate(checklist_data):
                 if isinstance(item, str):
-                    st.checkbox(item, key=f"check_{item[:30]}")
+                    st.checkbox(item, key=f"check_{prefix}_{idx}")
                 elif isinstance(item, dict):
-                    st.checkbox(
-                        item.get("task", item.get("item", str(item))),
-                        key=f"check_{str(item)[:30]}",
-                    )
+                    label = item.get("task", item.get("item", str(item)))
+                    wajib = item.get("wajib", False)
+                    if wajib:
+                        label = f"**[WAJIB]** {label}"
+                    st.checkbox(label, key=f"check_{prefix}_{idx}")
+
+    # Cek checklist di luar (untuk video utama)
+    root_checklist = result.get("checklist_produksi", result.get("checklist", video_panjang.get("checklist", [])))
+    if root_checklist:
+        st.markdown("### ✅ Checklist Produksi Video Utama")
+        display_checklist(root_checklist, "root")
+
+    # Cek checklist di dalam setiap shot
+    for shot in shots:
+        if isinstance(shot, dict):
+            checklist = shot.get("checklist_produksi", shot.get("checklist", []))
+            num = shot.get("shot_number", "?")
+            if checklist:
+                with st.expander(f"Shot #{num} — Checklist Produksi", expanded=True):
+                    display_checklist(checklist, f"shot_{num}")
 
 
 # ═══════════════════════════════════════════════════════════════
