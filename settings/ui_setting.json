@@ -1,0 +1,21 @@
+{
+  "app_title": "AI YouTube Content Intelligence Pro",
+  "app_subtitle": "Reverse-engineer strategi video YouTube & hasilkan paket produksi orisinal siap upload.",
+  "page_icon": "🎬",
+  "layout": "wide",
+  "theme": {
+    "primary_color": "#2383E2",
+    "background_color": "#111213",
+    "secondary_background_color": "#18191A",
+    "text_color": "#D4D4D5",
+    "accent_color": "#0F7EFF"
+  },
+  "badge_colors": {
+    "success": "#30A46C",
+    "warning": "#E5A000",
+    "danger": "#E5484D",
+    "info": "#2383E2",
+    "neutral": "#4A4B4D"
+  },
+  "footer_text": "AI YouTube Content Intelligence Pro · Dibangun untuk content creator Indonesia"
+}

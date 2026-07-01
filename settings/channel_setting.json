@@ -1,0 +1,25 @@
+{
+  "channels": [
+    {
+      "id": "suara_filsuf",
+      "name": "Suara Filsuf",
+      "file": "channels/suara_filsuf.md",
+      "emoji": "🧠",
+      "description": "Filosofi populer, reflektif, tenang, dan dalam."
+    },
+    {
+      "id": "nalar_senyap",
+      "name": "Nalar Senyap",
+      "file": "channels/nalar_senyap.md",
+      "emoji": "🌿",
+      "description": "Psikologi, healing, dan kontemplasi diri yang hangat."
+    },
+    {
+      "id": "tutur_kyai",
+      "name": "Tutur Kyai",
+      "file": "channels/tutur_kyai.md",
+      "emoji": "🕊️",
+      "description": "Hikmah Islami, akhlak, dan nilai spiritual yang santun."
+    }
+  ]
+}

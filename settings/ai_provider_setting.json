@@ -1,0 +1,200 @@
+{
+  "default_provider": "anthropic",
+  "providers": [
+    {
+      "id": "anthropic",
+      "label": "🟣 Anthropic (Claude langsung)",
+      "description": "Memanggil Claude langsung lewat Anthropic API. Butuh ANTHROPIC_API_KEY.",
+      "mode": "anthropic",
+      "requires_base_url": false,
+      "default_base_url": "",
+      "api_key_env": "ANTHROPIC_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6 (Rekomendasi)"
+        },
+        {
+          "id": "claude-opus-4-7",
+          "label": "Claude Opus 4.7 (Paling Mendalam)"
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "label": "Claude Haiku 4.5 (Paling Cepat)"
+        }
+      ]
+    },
+    {
+      "id": "freemodel",
+      "label": "💜 FreeModel.dev (Free tier multi-model)",
+      "description": "Akses multi-model AI gratis via FreeModel.dev — OpenAI-compatible endpoint. Daftar gratis di freemodel.dev, dapatkan API key dari dashboard. Support Claude, GPT, Gemini, LLaMA, Mistral, dan banyak lagi dengan free tier generous.",
+      "mode": "openai_compatible",
+      "requires_base_url": false,
+      "default_base_url": "https://api.freemodel.dev/v1",
+      "api_key_env": "FREEMODEL_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "claude-3-5-sonnet-20241022",
+          "label": "Claude 3.5 Sonnet (Rekomendasi, Free)"
+        },
+        {
+          "id": "gpt-4o",
+          "label": "GPT-4o (Free)"
+        },
+        {
+          "id": "gemini-2-flash-exp",
+          "label": "Gemini 2 Flash (Free)"
+        },
+        {
+          "id": "llama-3-1-70b",
+          "label": "Llama 3.1 70B (Free)"
+        },
+        {
+          "id": "mistral-large",
+          "label": "Mistral Large (Free)"
+        }
+      ]
+    },
+    {
+      "id": "9router",
+      "label": "🟢 9Router Proxy (Hugging Face Spaces + lokal)",
+      "description": "Proxy self-hosted (https://github.com/decolua/9router) dengan OpenAI-compatible endpoint — bisa running di mesin lokal (http://localhost:20128/v1) atau hosted di Hugging Face Spaces (https://suarafilsuf-ai.hf.space/v1). Merutekan ke 40+ provider (Claude/GPT/Gemini/GLM/DeepSeek/dll) lewat satu endpoint.",
+      "mode": "openai_compatible",
+      "requires_base_url": true,
+      "default_base_url": "https://suarafilsuf-ai.hf.space/v1",
+      "api_key_env": "NINEROUTER_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "cc/claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6 (via 9Router)"
+        },
+        {
+          "id": "cc/claude-opus-4-7",
+          "label": "Claude Opus 4.7 (via 9Router)"
+        },
+        {
+          "id": "gc/gemini-3-flash",
+          "label": "Gemini 3 Flash (via 9Router, free tier)"
+        },
+        {
+          "id": "if/kimi-k2-thinking",
+          "label": "Kimi K2 Thinking (via 9Router, free tier)"
+        },
+        {
+          "id": "qw/qwen3-coder-plus",
+          "label": "Qwen3 Coder Plus (via 9Router, free tier)"
+        }
+      ]
+    },
+    {
+      "id": "aerolink",
+      "label": "🔴 Aerolink (proxy Claude, free credit)",
+      "description": "Proxy Claude via aerolink.lat — OpenAI-compatible endpoint yang route ke Anthropic. Daftar gratis di aerolink.lat/register, dapatkan API key dari dashboard, lalu isi di sini.",
+      "mode": "openai_compatible",
+      "requires_base_url": false,
+      "default_base_url": "https://capi.aerolink.lat/v1",
+      "api_key_env": "AEROLINK_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "claude-opus-4-8",
+          "label": "Claude Opus 4.8 (Paling Mendalam)"
+        },
+        {
+          "id": "claude-opus-4-7",
+          "label": "Claude Opus 4.7"
+        },
+        {
+          "id": "claude-opus-4-6",
+          "label": "Claude Opus 4.6"
+        },
+        {
+          "id": "claude-sonnet-4-6",
+          "label": "Claude Sonnet 4.6 (Rekomendasi)"
+        },
+        {
+          "id": "claude-haiku-4-5-20251001",
+          "label": "Claude Haiku 4.5 (Paling Cepat)"
+        }
+      ]
+    },
+    {
+      "id": "openai",
+      "label": "🔵 OpenAI (GPT langsung)",
+      "description": "Memanggil model GPT langsung lewat OpenAI API. Butuh OPENAI_API_KEY.",
+      "mode": "openai_compatible",
+      "requires_base_url": false,
+      "default_base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "gpt-5.2",
+          "label": "GPT-5.2 (Rekomendasi)"
+        },
+        {
+          "id": "gpt-5.2-mini",
+          "label": "GPT-5.2 Mini (Lebih Cepat/Murah)"
+        },
+        {
+          "id": "gpt-5.2-pro",
+          "label": "GPT-5.2 Pro (Paling Mendalam)"
+        }
+      ]
+    },
+    {
+      "id": "gemini",
+      "label": "🟡 Google Gemini (langsung)",
+      "description": "Memanggil Gemini langsung lewat endpoint OpenAI-compatible Google. Butuh GEMINI_API_KEY.",
+      "mode": "openai_compatible",
+      "requires_base_url": false,
+      "default_base_url": "https://generativelanguage.googleapis.com/v1beta/openai/",
+      "api_key_env": "GEMINI_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "gemini-3-pro",
+          "label": "Gemini 3 Pro"
+        },
+        {
+          "id": "gemini-3-flash",
+          "label": "Gemini 3 Flash"
+        }
+      ]
+    },
+    {
+      "id": "xiaomi_mimo",
+      "label": "🟠 Xiaomi MiMo (API Key langsung)",
+      "description": "Memanggil model MiMo-V2.5 dari Xiaomi langsung lewat API resmi pay-as-you-go (BUKAN Token Plan) — OpenAI-compatible endpoint. Daftar & dapatkan API key di platform.xiaomimimo.com. Model agentic Xiaomi dengan context window hingga 1M token, harga jauh lebih murah dibanding model setara (mulai $1/$3 per juta token).",
+      "mode": "openai_compatible",
+      "requires_base_url": false,
+      "default_base_url": "https://api.xiaomimimo.com/v1",
+      "api_key_env": "XIAOMI_MIMO_API_KEY",
+      "allow_custom_model": true,
+      "models": [
+        {
+          "id": "mimo-v2.5-pro",
+          "label": "MiMo-V2.5 Pro (Rekomendasi — reasoning, context 1M token)"
+        },
+        {
+          "id": "mimo-v2.5",
+          "label": "MiMo-V2.5 (Multimodal — teks + gambar)"
+        }
+      ]
+    },
+    {
+      "id": "custom",
+      "label": "⚪ Custom OpenAI-Compatible Endpoint",
+      "description": "Untuk provider/proxy lain yang mengikuti format OpenAI-compatible (OpenRouter, Groq, DeepSeek, Together AI, LiteLLM, dst). Isi base URL, model id, dan API key secara manual.",
+      "mode": "openai_compatible",
+      "requires_base_url": true,
+      "default_base_url": "",
+      "api_key_env": "CUSTOM_AI_API_KEY",
+      "allow_custom_model": true,
+      "models": []
+    }
+  ]
+}
